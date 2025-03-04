@@ -1,0 +1,69 @@
+Difference in the data related assumtions in the deep learnning and  RL:
+    -> DL assumes the IID(independent and the identical data), like each data pt. is separate and all of them follows same probability distribution.
+    -> whereas in Rl , data is correlated , i.e each stae depend on previous state, and state also depends on action etc.
+    
+Bellman equation:
+    -> It is based on the optimality.
+    -> It states that the value off the action -pair Q(s,a) is equal to the immediate rewanrd and the discounted best possible value of t
+        future state.
+            Q*(s,a)=E[r+Y maxQ*(s`,a`)|s,a]
+            where,:
+                -> s` is the state agent transition to.
+                -> a` is the action agnet ccan take
+                -> Q*(s`,a`), best possible Q value agent can have.
+
+Why this computation did not work on Atari Games:(Q table lookup)
+    -> No Generalization:
+        -> The algorithm does not infer similarities between different states.
+        -> If two states s1 and s2 are similar , still it will learn them separately as they are treated as completely new state.
+        -> i.e slow training
+
+        Eg.
+        ->If the ball is slightly left of the center, it should behave almost the same as when it's slightly right.
+    
+    -> Huge State space:
+        -> eg. 3*3 tic tac toe have only, 3^(9) states(action->x,o,empty)
+        -> in atari it can go upto (action)^(84*84) for gray scale  and for RGB -> (actions)^(210*160)
+    
+    -> Data Correlation
+        -> this breaks the IID principle for stable training principle.
+    
+    -> Memory inefficiancy:
+        -> We cannot store huge sate action space, memory allocation will be huge.
+
+
+Functionn Approxmators( Q(s,a,theta) ~ Q*(s,a)) 
+    -> here theta is teb weights of the NN , which is used as the non-linear function aprroximator.
+    -> Loss of the approximator.
+            L(i) = E_{s, a} [(y_i - Q(s, a; θ_i))^2]
+
+                where, y_i = E_{s'} [r + γ max_{a'} Q(s', a'; θ_{i-1})] (Traget value)
+    Note:Basically we are calculating the loss between teh current state action value function with given s,a and the predicted 
+        state action function given the transitioninig state (s->s`)(from the predicted network)
+
+    Note: weights from the previous  iterationn ,i.e i-1 are kept constant while calculating the gradient.
+        
+        gradients: ∇_θ L(i) = E_{s, a} [(y_i - Q(s, a; θ_i)) ∇_θ Q(s, a; θ_i)]   (w.r.t i)
+
+        -> SGD is used while calculating this , as it is not feasible to sum everyhting for this much large stae space.
+
+    Behavior distribution:
+        ->p(s,a) is the probability distribution over sequences s and actions a.
+        -> The behaviour distribution refers to how the agent samples experiences based on its current policy.
+    
+    On-Policy and Off-Policy:
+        On Policy->No exploration (SARSA)
+        Of Policy-> Exploration (DQN)
+        
+        How exploration??
+            e-greedy approach:
+                π(a | s) =  
+                            {  
+                            1 - ϵ + (ϵ / |A|),  if a = argmax_a Q(s, a; θ),  
+                            ϵ / |A|,  otherwise  
+                            }
+
+            -> Here, with probability 1-e , agent will pick the best action(exploitation)
+            -> And with the probability e , it will take random action (exploration)
+            -> During training, we have to decrease the e, as to reduce the exploration.
+                
