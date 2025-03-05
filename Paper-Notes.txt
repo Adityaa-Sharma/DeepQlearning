@@ -66,4 +66,115 @@ Functionn Approxmators( Q(s,a,theta) ~ Q*(s,a))
             -> Here, with probability 1-e , agent will pick the best action(exploitation)
             -> And with the probability e , it will take random action (exploration)
             -> During training, we have to decrease the e, as to reduce the exploration.
+
+    Replay Buffer:
+        ->The updates in the Q tableonly takes the most recent experiences, leading to the high correlation between the 
+        consecutive training sample and which makes the training unstable.
+
+        ->At time t, the agent:
+
+            - Sees state s_t (game screen).  
+            - Takes action a_t (move paddle left).  
+            - Receives reward r_t (+1 if hits ball).  
+            - Enters next state s_{t+1}.  
+
+            This experience (s_t, a_t, r_t, s_{t+1}) is stored in memory.
+        
+        -> Instead of training on only the latest sample, DQN randomly samples a mini-batch from replay memory.
+        -> Breaks correlation between consecutive frames.
+
+    Stacking of the states:
+        -> In image-based RL (e.g., Atari Pong ), the environment provides only the current frame.  
+            - A single frame lacks motion information (e.g., ball direction).  
+            - So, we stack the last 4 frames together to form a state.  
+
+                S_t = (x_t, x_{t-1}, x_{t-2}, x_{t-3})  
+
+            This allows the agent to infer motion and velocity!
+    
+    Model Architecture:
+        -> Images were of 210 x 160 pixel images, to reduce complexity ddownsamole them to gray scale 110 x 84.
+        -> futher downsampliing for GPU optimization 84 x 84.
+
+        -> Neural network Architecture:
+            Two Approaches:
+                1) Both state and action as input:
+                    Q(s,a)=f(s,a:theata)
+                -> The network outputs a single scalar Q-value for that state-action pair.
+                -> Each action requires a separate forward pass!
+                -> Inefficient for the large action space like the atari games.
+
+                2)Only state as input:
+                ->Instead of taking both s and a  as inputs, the network only takes the state as input.
+                -> The network outputs a separate Q value for each possible action.
+                    Q(s,a)=f(s,theata)_a
+                -> Only ONE forward pass is needed to get Q-values for all actions!
+                -> Network will output nodes as the number of the actions.(important)
+                -> In one formward pass we can get all the Q value of all the action , from that select the max Q value from this.
+
+                ->Each output node corresponds to:  
+                    Q(s, a1), Q(s, a2), Q(s, a3), ..., Q(s, an)  
+
+                    ->The action with the highest Q-value is chosen:  
+                                a* = argmax_a Q(s, a)
+        
+        Pre-Processing:
+            conv1= 4(stack), 16, kernel_size=8, stride=4
+            conv2= 16, 32, kernel_size=4, stride=2 
+            RELU
+            FC1= 32 * 9 * 9, 256
+            FC2= 256, num_actions
+
+        
+        Reward Clipping:
+            -> Original problem:  
+                    Different games have hugely different score scales. 
+                Example:  
+                    - Pong : Scores range from -21 to +21.  
+                    - Breakout : A single hit could give 10+ points.  
+                    - Ms. Pac-Man : Scores can go into the thousands.  
                 
+            -> Solution:  
+               -> Instead of using actual rewards, they clip rewards: 
+               ->r =  
+                        {  
+                                +1, if reward is positive  
+                                -1, if reward is negative  
+                                0, if reward is zero  
+                        } 
+            
+            -> stable training as gradients are normaised.
+
+
+        -> e decay information:
+            -> Trained for 10 million frames.
+            -> 1---> 0.1 in first million frame than fixed to 0.1 for later frames.
+        
+        -> Frame skipping:
+            -> k=4, that agent will selct action on ecverry 4 th frame rather that on every frame, reducing the computaion and can play more games.
+            -> Same action is processed in th skipped frames. like at first frame i have choosen left, then on 2,3,4 left will apply and on 4 new action will be taken.
+        
+        -> Note: An episode starts when the agent enters the environment and ends when it reaches a terminal condition (e.g., winning, losing, or time running out).
+
+
+        -> Evaluation Metrics:
+            -> Epoisodic Reward.
+            -> Predicted Q values: stable increasse-> stable training/learning.
+                -> Issue: Q -value overestimation
+
+            why Q value is better metric than the reward:
+                -> Episodic reward the prone to noise, and random events.
+                -> Q value is stable and not pronne to randomness as we extract the states randomly before the training only.
+
+            How Predicted Q learning metric is calculated:
+                Step 1: Collect a Fixed Set of States (Before Training)  
+                🔹 Before training starts, they run a random policy and store a set of states.  
+                🔹 These states are fixed, meaning they are the same for every evaluation.  
+
+                Step 2: Track the Maximum Predicted Q-Value for Each State  
+                🔹 At different points during training, they:  
+
+                    1. Feed these fixed states into the Q-network.  
+                    2. Compute the maximum predicted Q-value for each state.  
+                    3. Average these Q-values across all stored states.  
+        
