@@ -9,3 +9,6 @@
 #8) saving the model
 
 
+# choosen game : Breakout
+
+
