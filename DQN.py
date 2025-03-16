@@ -71,3 +71,10 @@ class DQN(nn.Module):
         else:
             action = random.randrange(self.num_actions)
         return action
+    
+
+def DQN_Target_Network():
+    pass
+
+
+    
