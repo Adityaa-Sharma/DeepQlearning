@@ -82,6 +82,59 @@ class PreProcessing():
         gray = cv2.resize(gray, (84, 84), interpolation=cv2.INTER_AREA)
         gray=gray/255.0
         return torch.FloatTensor(gray).unsqueeze(0)
-        
 
-    
+class DQNAgent:
+    def __init__(self, input_shape):
+        self.policy_net = DQN(input_shape)
+        self.target_net = DQN(input_shape)
+        self.target_net.load_state_dict(self.policy_net.state_dict())
+        self.target_net.eval()  # Set to evaluation mode
+        
+        self.optimizer = optim.RMSprop(self.policy_net.parameters())
+        self.memory = ReplayBuffer()
+
+    def optimize_model(self, batch_size, gamma=0.99):
+        if len(self.memory) < batch_size:
+            return
+            
+        state, action, reward, next_state, done = self.memory.sample(batch_size)
+        
+        # Reward clipping
+        reward = np.clip(reward, -1, 1)
+        
+        # Compute Q(s_t, a) - the model computes Q(s_t), then we select the columns of actions taken
+        state_action_values = self.policy_net(torch.FloatTensor(state)).gather(1, torch.LongTensor(action))
+        
+        # Compute V(s_{t+1}) for all next states
+        next_state_values = self.target_net(torch.FloatTensor(next_state)).max(1)[0].detach()
+        
+        # Compute the expected Q values
+        expected_state_action_values = torch.FloatTensor(reward) + \
+                                     (gamma * next_state_values * (1 - torch.FloatTensor(done)))
+        
+        # Compute Huber loss
+        loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
+        
+        # Optimize the model
+        self.optimizer.zero_grad()
+        loss.backward()
+        for param in self.policy_net.parameters():
+            param.grad.data.clamp_(-1, 1)
+        self.optimizer.step()
+
+class FrameStacker:
+    def __init__(self, num_frames=4):
+        self.num_frames = num_frames
+        self.frames = []
+        
+    def push(self, frame):
+        if len(self.frames) >= self.num_frames:
+            self.frames.pop(0)
+        self.frames.append(frame)
+        
+    def get_state(self):
+        while len(self.frames) < self.num_frames:
+            self.frames.append(self.frames[-1])
+        return np.stack(self.frames, axis=0)
+
+
