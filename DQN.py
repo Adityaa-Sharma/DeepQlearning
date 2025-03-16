@@ -75,11 +75,7 @@ class DQN(nn.Module):
         return action
     
 
-def DQN_Target_Network():
-    pass
-
-
-def PreProcessing():
+class PreProcessing():
     # This will make the input as 210x160x3 to 84x84x4
     def preprecess(image):
         gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
