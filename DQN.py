@@ -88,7 +88,7 @@ class DQNAgent:
         self.policy_net = DQN(input_shape)
         self.target_net = DQN(input_shape)
         self.target_net.load_state_dict(self.policy_net.state_dict())
-        self.target_net.eval()  # Set to evaluation mode
+        self.target_net.eval()  # only update after 10000 steps
         
         self.optimizer = optim.RMSprop(self.policy_net.parameters())
         self.memory = ReplayBuffer()
@@ -108,11 +108,10 @@ class DQNAgent:
         # Compute V(s_{t+1}) for all next states
         next_state_values = self.target_net(torch.FloatTensor(next_state)).max(1)[0].detach()
         
-        # Compute the expected Q values
+        # if done , stop the episode
         expected_state_action_values = torch.FloatTensor(reward) + \
                                      (gamma * next_state_values * (1 - torch.FloatTensor(done)))
         
-        # Compute Huber loss
         loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
         
         # Optimize the model
@@ -136,5 +135,58 @@ class FrameStacker:
         while len(self.frames) < self.num_frames:
             self.frames.append(self.frames[-1])
         return np.stack(self.frames, axis=0)
+
+def train(episodes, batch_size=32):
+    env = gym.make('ALE/Breakout-v5')
+    agent = DQNAgent(input_shape=(4, 84, 84))  # 4 stacked frames
+    frame_stacker = FrameStacker()
+    
+    epsilon = 1.0
+    epsilon_min = 0.1
+    epsilon_decay = (epsilon - epsilon_min) / 1000000  # Decay over 1M frames
+    
+    for episode in range(episodes):
+        obs, _ = env.reset()
+        frame = PreProcessing.preprecess(obs)
+        frame_stacker.push(frame)
+        
+        total_reward = 0
+        done = False
+        
+        while not done:
+            state = frame_stacker.get_state()
+            action = agent.policy_net.act(state, epsilon)
+            
+            # Frame skipping (k=4)
+            reward = 0
+            for _ in range(4):
+                obs, r, terminated, truncated, _ = env.step(action)
+                reward += r
+                if terminated or truncated:
+                    done = True
+                    break
+                    
+            frame = PreProcessing.preprecess(obs)
+            frame_stacker.push(frame)
+            next_state = frame_stacker.get_state()
+            
+            # Store transition in memory
+            agent.memory.push(state, action, reward, next_state, done)
+            
+            # Optimize model
+            agent.optimize_model(batch_size)
+            
+            # Update target network periodically
+            if episode % 10 == 0:  # Update every 10 episodes
+                agent.target_net.load_state_dict(agent.policy_net.state_dict())
+                
+            total_reward += reward
+            epsilon = max(epsilon_min, epsilon - epsilon_decay)
+            
+        print(f"Episode {episode}, Total Reward: {total_reward}, Epsilon: {epsilon:.2f}")
+
+
+
+
 
 
