@@ -102,10 +102,10 @@ class DQNAgent:
         # Reward clipping
         reward = np.clip(reward, -1, 1)
         
-        # Compute Q(s_t, a) - the model computes Q(s_t), then we select the columns of actions taken
+        # Compute Q(s_t, a) ,  for the actions which has been taken
         state_action_values = self.policy_net(torch.FloatTensor(state)).gather(1, torch.LongTensor(action))
         
-        # Compute V(s_{t+1}) for all next states
+        
         next_state_values = self.target_net(torch.FloatTensor(next_state)).max(1)[0].detach()
         
         # if done , stop the episode
@@ -131,59 +131,89 @@ class FrameStacker:
             self.frames.pop(0)
         self.frames.append(frame)
         
-    def get_state(self):
+    def get_state(self): # duplicating the last frame to make it 4 frames
         while len(self.frames) < self.num_frames:
             self.frames.append(self.frames[-1])
         return np.stack(self.frames, axis=0)
 
-def train(episodes, batch_size=32):
-    env = gym.make('ALE/Breakout-v5')
-    agent = DQNAgent(input_shape=(4, 84, 84))  # 4 stacked frames
+
+
+def evaluate(agent, num_episodes=10, render=False):
+    """
+    Evaluate the agent's performance and track Q-value predictions
+    """
+    env = gym.make('ALE/Breakout-v5', render_mode="human" if render else None)
     frame_stacker = FrameStacker()
     
-    epsilon = 1.0
-    epsilon_min = 0.1
-    epsilon_decay = (epsilon - epsilon_min) / 1000000  # Decay over 1M frames
+    episode_rewards = []
+    q_values = []
     
-    for episode in range(episodes):
+    for episode in range(num_episodes):
         obs, _ = env.reset()
         frame = PreProcessing.preprecess(obs)
         frame_stacker.push(frame)
         
-        total_reward = 0
+        episode_reward = 0
+        episode_q_values = []
         done = False
         
         while not done:
             state = frame_stacker.get_state()
-            action = agent.policy_net.act(state, epsilon)
             
-            # Frame skipping (k=4)
-            reward = 0
-            for _ in range(4):
-                obs, r, terminated, truncated, _ = env.step(action)
-                reward += r
-                if terminated or truncated:
-                    done = True
-                    break
-                    
+            # Get Q-values for all actions
+            with torch.no_grad():
+                state_tensor = torch.FloatTensor(np.float32(state)).unsqueeze(0)
+                q_value = agent.policy_net(state_tensor)
+                episode_q_values.append(q_value.max().item())  # Store maximum Q-value
+                action = q_value.max(1)[1].item()
+            
+            obs, reward, terminated, truncated, _ = env.step(action)
+            episode_reward += reward
+            done = terminated or truncated
+            
             frame = PreProcessing.preprecess(obs)
             frame_stacker.push(frame)
-            next_state = frame_stacker.get_state()
-            
-            # Store transition in memory
-            agent.memory.push(state, action, reward, next_state, done)
-            
-            # Optimize model
-            agent.optimize_model(batch_size)
-            
-            # Update target network periodically
-            if episode % 10 == 0:  # Update every 10 episodes
-                agent.target_net.load_state_dict(agent.policy_net.state_dict())
-                
-            total_reward += reward
-            epsilon = max(epsilon_min, epsilon - epsilon_decay)
-            
-        print(f"Episode {episode}, Total Reward: {total_reward}, Epsilon: {epsilon:.2f}")
+        
+        episode_rewards.append(episode_reward)
+        q_values.append(np.mean(episode_q_values))
+        
+        print(f"Evaluation Episode {episode + 1}")
+        print(f"  Reward: {episode_reward}")
+        print(f"  Average Q-Value: {np.mean(episode_q_values):.2f}")
+        print(f"  Max Q-Value: {np.max(episode_q_values):.2f}")
+    
+    env.close()
+    
+    return {
+        'mean_reward': np.mean(episode_rewards),
+        'std_reward': np.std(episode_rewards),
+        'mean_q_value': np.mean(q_values),
+        'std_q_value': np.std(q_values)
+    }
+
+class MetricLogger:
+    """
+    Logger to track training metrics
+    """
+    def __init__(self):
+        self.rewards = []
+        self.q_values = []
+        self.losses = []
+        self.epsilons = []
+    
+    def log_episode(self, reward, q_value, loss, epsilon):
+        self.rewards.append(reward)
+        self.q_values.append(q_value)
+        self.losses.append(loss)
+        self.epsilons.append(epsilon)
+    
+    def get_metrics(self):
+        return {
+            'last_100_mean_reward': np.mean(self.rewards[-100:]),
+            'last_100_mean_q': np.mean(self.q_values[-100:]),
+            'last_100_mean_loss': np.mean(self.losses[-100:]),
+            'current_epsilon': self.epsilons[-1] if self.epsilons else None
+        }
 
 
 
