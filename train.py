@@ -19,8 +19,8 @@ def train(episodes, batch_size=32, eval_frequency=100):
     epsilon_decay = (epsilon - epsilon_min) / 1000000
     
     for episode in range(episodes):
-        obs, _ = env.reset()
-        frame = PreProcessing.preprecess(obs)
+        obs, _ = env.reset() #(210, 160, 3)
+        frame = PreProcessing.preprecess(obs) #[1,84,84]
         frame_stacker.push(frame)
         
         total_reward = 0
@@ -64,11 +64,15 @@ def train(episodes, batch_size=32, eval_frequency=100):
                 q_value = agent.policy_net(torch.FloatTensor(state).unsqueeze(0))
                 episode_q_values.append(q_value.max().item())
             
+        # Get loss value, ensuring it's a float
+        loss_value = agent.optimize_model(batch_size) if len(agent.memory) >= batch_size else 0.0
+        
+        # Log metrics with proper float values
         logger.log_episode(
-            reward=total_reward,
-            q_value=np.mean(episode_q_values),
-            loss=loss.item() if 'loss' in locals() else 0,
-            epsilon=epsilon
+            reward=float(total_reward),
+            q_value=float(np.mean(episode_q_values)),
+            loss=float(loss_value),
+            epsilon=float(epsilon)
         )
         
         # Periodic evaluation

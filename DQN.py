@@ -22,7 +22,9 @@ import random
 import gym
 from configs import ModelConfig
 import cv2
-
+import gymnasium as gym
+import ale_py
+gym.register_envs(ale_py)
 
 class ReplayBuffer:
     def __init__(self):
@@ -47,7 +49,7 @@ class ReplayBuffer:
 class DQN(nn.Module):
     def __init__(self, input_shape):
         super(DQN, self).__init__()
-        self.input_shape = input_shape
+        self.input_shape = input_shape #(4,84,84)
         self.num_actions = ModelConfig.NumActions
         self.conv1 = nn.Conv2d(input_shape[0], 32, kernel_size=8, stride=4)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
@@ -81,7 +83,7 @@ class PreProcessing():
         gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
         gray = cv2.resize(gray, (84, 84), interpolation=cv2.INTER_AREA)
         gray=gray/255.0
-        return torch.FloatTensor(gray).unsqueeze(0)
+        return torch.FloatTensor(gray).unsqueeze(0).squeeze(0)
 
 class DQNAgent:
     def __init__(self, input_shape):
@@ -95,23 +97,31 @@ class DQNAgent:
 
     def optimize_model(self, batch_size, gamma=0.99):
         if len(self.memory) < batch_size:
-            return
+            return 0.0  # Return float instead of None
             
         state, action, reward, next_state, done = self.memory.sample(batch_size)
         
+        # Reshape state and action tensors
+        state = torch.FloatTensor(state)  # Shape: [batch_size, 4, 84, 84]
+        action = torch.LongTensor(action).unsqueeze(1)  # Shape: [batch_size, 1]
+        reward = torch.FloatTensor(reward)  # Shape: [batch_size]
+        next_state = torch.FloatTensor(next_state)  # Shape: [batch_size, 4, 84, 84]
+        done = torch.FloatTensor(done)  # Shape: [batch_size]
+        
         # Reward clipping
-        reward = np.clip(reward, -1, 1)
+        reward = torch.clamp(reward, -1, 1)
         
-        # Compute Q(s_t, a) ,  for the actions which has been taken
-        state_action_values = self.policy_net(torch.FloatTensor(state)).gather(1, torch.LongTensor(action))
+        # Compute Q(s_t, a) for the actions which were taken
+        state_action_values = self.policy_net(state).gather(1, action)
         
+        # Compute V(s_{t+1}) for all next states
+        next_state_values = self.target_net(next_state).max(1)[0].detach()
         
-        next_state_values = self.target_net(torch.FloatTensor(next_state)).max(1)[0].detach()
+        # Compute the expected Q values
+        expected_state_action_values = reward + (gamma * next_state_values * (1 - done))
+        expected_state_action_values = torch.clamp(expected_state_action_values, -1, 1)
         
-        # if done , stop the episode
-        expected_state_action_values = torch.FloatTensor(reward) + \
-                                     (gamma * next_state_values * (1 - torch.FloatTensor(done)))
-        
+        # Compute Huber loss
         loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
         
         # Optimize the model
@@ -120,7 +130,8 @@ class DQNAgent:
         for param in self.policy_net.parameters():
             param.grad.data.clamp_(-1, 1)
         self.optimizer.step()
-
+        
+        return loss.item()  # This returns a float
 class FrameStacker:
     def __init__(self, num_frames=4):
         self.num_frames = num_frames
@@ -202,10 +213,10 @@ class MetricLogger:
         self.epsilons = []
     
     def log_episode(self, reward, q_value, loss, epsilon):
-        self.rewards.append(reward)
-        self.q_values.append(q_value)
-        self.losses.append(loss)
-        self.epsilons.append(epsilon)
+        self.rewards.append(float(reward))  # Ensure float
+        self.q_values.append(float(q_value))  # Ensure float
+        self.losses.append(float(loss))  # Ensure float
+        self.epsilons.append(float(epsilon))  # Ensure float
     
     def get_metrics(self):
         return {
