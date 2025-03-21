@@ -24,7 +24,7 @@ def train(episodes, batch_size=32, eval_frequency=100):
     
     epsilon = 1.0
     epsilon_min = 0.1
-    epsilon_decay = (epsilon - epsilon_min) / 1000000
+    epsilon_decay = (epsilon - epsilon_min) / 2500000  
     
     for episode in range(episodes):
         obs, _ = env.reset()
@@ -34,6 +34,7 @@ def train(episodes, batch_size=32, eval_frequency=100):
         total_reward = 0
         loss = 0
         done = False
+        step=0
         
         # Log metrics
         episode_q_values = []
@@ -46,6 +47,7 @@ def train(episodes, batch_size=32, eval_frequency=100):
             for _ in range(4):
                 obs, r, terminated, truncated, _ = env.step(action)
                 reward += r
+                step += 1
                 if terminated or truncated:
                     done = True
                     break
@@ -61,7 +63,7 @@ def train(episodes, batch_size=32, eval_frequency=100):
                 loss = agent.optimize_model(batch_size)
             
             # Update target network periodically
-            if episode % 10 == 0:
+            if step % 2500 == 0:
                 agent.target_net.load_state_dict(agent.policy_net.state_dict())
                 
             total_reward += reward
@@ -96,4 +98,4 @@ def train(episodes, batch_size=32, eval_frequency=100):
         print(f"Episode {episode}, Total Reward: {total_reward}, Epsilon: {epsilon:.2f}")
         
 if __name__ == "__main__":
-    train(episodes=1000, batch_size=32, eval_frequency=100)
+    train(episodes=2500, batch_size=32, eval_frequency=100)
