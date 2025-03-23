@@ -80,7 +80,6 @@ class DQN(nn.Module):
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
-        
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
         x = F.relu(self.fc(x.view(x.size(0), -1)))
@@ -137,10 +136,11 @@ class DQNAgent:
         self.target_net.eval()
         
         # Create optimizer AFTER moving model to device
-        self.optimizer = optim.RMSprop(self.policy_net.parameters())
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=0.0001)
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=100000, gamma=0.5)
         self.memory = ReplayBuffer(device=self.device)
 
-    def optimize_model(self, batch_size, gamma=0.99):
+    def optimize_model(self, batch_size, gamma=0.99, step_count=None):
         if len(self.memory) < batch_size:
             return 0.0
             
@@ -161,7 +161,7 @@ class DQNAgent:
         
         # Compute the expected Q values
         expected_state_action_values = reward + (gamma * next_state_values * (1 - done))
-        expected_state_action_values = torch.clamp(expected_state_action_values, -1, 1)
+        # expected_state_action_values = torch.clamp(expected_state_action_values, -1, 1)
         
         # Compute Huber loss
         loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
@@ -172,6 +172,10 @@ class DQNAgent:
         for param in self.policy_net.parameters():
             param.grad.data.clamp_(-1, 1)
         self.optimizer.step()
+        
+        # Step the scheduler if step_count is provided
+        if step_count is not None and step_count % 1000 == 0:
+            self.scheduler.step()
         
         return loss.item()
 
@@ -282,6 +286,117 @@ class MetricLogger:
                 'last_100_mean_loss': 0.0,
                 'current_epsilon': None
             }
+
+# Add at the beginning of DQN.py or create new wrappers.py
+import numpy as np
+from collections import deque
+
+class NoopResetEnv(gym.Wrapper):
+    def __init__(self, env, noop_max=30):
+        """Sample initial states by taking random number of no-ops on reset."""
+        gym.Wrapper.__init__(self, env)
+        self.noop_max = noop_max
+        self.override_num_noops = None
+        self.noop_action = 0
+        assert env.unwrapped.get_action_meanings()[0] == 'NOOP'
+
+    def reset(self, **kwargs):
+        """ Do no-op action for a number of steps in [1, noop_max]."""
+        self.env.reset(**kwargs)
+        if self.override_num_noops is not None:
+            noops = self.override_num_noops
+        else:
+            noops = self.np_random.integers(1, self.noop_max + 1)
+        assert noops > 0
+        obs = None
+        for _ in range(noops):
+            obs, _, terminated, truncated, info = self.env.step(self.noop_action)
+            if terminated or truncated:
+                obs, info = self.env.reset(**kwargs)
+        return obs, info
+
+    def step(self, ac):
+        return self.env.step(ac)
+
+class FireResetEnv(gym.Wrapper):
+    def __init__(self, env):
+        """Take action on reset for environments that are fixed until firing."""
+        gym.Wrapper.__init__(self, env)
+        assert env.unwrapped.get_action_meanings()[1] == 'FIRE'
+        assert len(env.unwrapped.get_action_meanings()) >= 3
+
+    def reset(self, **kwargs):
+        self.env.reset(**kwargs)
+        obs, _, terminated, truncated, info = self.env.step(1)
+        if terminated or truncated:
+            self.env.reset(**kwargs)
+        obs, _, terminated, truncated, info = self.env.step(2)
+        if terminated or truncated:
+            self.env.reset(**kwargs)
+        return obs, info
+
+    def step(self, ac):
+        return self.env.step(ac)
+
+class EpisodicLifeEnv(gym.Wrapper):
+    def __init__(self, env):
+        """Make end-of-life == end-of-episode, but only reset on true game over."""
+        gym.Wrapper.__init__(self, env)
+        self.lives = 0
+        self.was_real_done = True
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        self.was_real_done = terminated
+        # check current lives, make loss of life terminal,
+        # then update lives to handle bonus lives
+        lives = self.env.unwrapped.ale.lives()
+        if lives < self.lives and lives > 0:
+            # for Qbert sometimes we stay in lives == 0 condition for a few frames
+            # so it's important to keep lives > 0, so that we only reset once
+            # the environment advertises done.
+            terminated = True
+        self.lives = lives
+        return obs, reward, terminated, truncated, info
+
+    def reset(self, **kwargs):
+        """Reset only when lives are exhausted."""
+        if self.was_real_done:
+            obs, info = self.env.reset(**kwargs)
+        else:
+            # no-op step to advance from terminal/lost life state
+            obs, _, _, _, info = self.env.step(0)
+        self.lives = self.env.unwrapped.ale.lives()
+        return obs, info
+
+class MaxAndSkipEnv(gym.Wrapper):
+    def __init__(self, env, skip=4):
+        """Return only every `skip`-th frame"""
+        gym.Wrapper.__init__(self, env)
+        # most recent raw observations (for max pooling across time steps)
+        self._obs_buffer = np.zeros((2,) + env.observation_space.shape, dtype=np.uint8)
+        self._skip = skip
+
+    def step(self, action):
+        """Repeat action, sum reward, and max over last observations."""
+        total_reward = 0.0
+        done = None
+        for i in range(self._skip):
+            obs, reward, terminated, truncated, info = self.env.step(action)
+            if i == self._skip - 2: self._obs_buffer[0] = obs
+            if i == self._skip - 1: self._obs_buffer[1] = obs
+            total_reward += reward
+            if terminated or truncated:
+                done = True
+                break
+        # Note that the observation on the done=True frame
+        # doesn't matter
+        max_frame = self._obs_buffer.max(axis=0)
+
+        return max_frame, total_reward, terminated, truncated, info
+
+    def reset(self, **kwargs):
+        return self.env.reset(**kwargs)
 
 
 
