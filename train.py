@@ -55,7 +55,7 @@ def train(episodes, batch_size=32, eval_frequency=100):
     global_step = 0
     epsilon_start = 1.0
     epsilon_min = 0.1
-    epsilon_decay_steps = 100000
+    epsilon_decay_steps = 150000
     decay_rate = (epsilon_start - epsilon_min) / epsilon_decay_steps
     
     # Constants
@@ -175,4 +175,4 @@ def train(episodes, batch_size=32, eval_frequency=100):
 
 if __name__ == "__main__":
     # Run training with specified parameters
-    train(episodes=20000, batch_size=32, eval_frequency=200)
+    train(episodes=30000, batch_size=32, eval_frequency=300)

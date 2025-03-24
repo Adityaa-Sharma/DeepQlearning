@@ -122,85 +122,56 @@ class PreProcessing():
 class DQNAgent:
     def __init__(self, input_shape, device=None):
         self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
-        # Create models and explicitly move them to the specified device
-        self.policy_net = DQN(input_shape)
-        self.target_net = DQN(input_shape)
-        
-        # Explicitly move to the specified device
-        self.policy_net = self.policy_net.to(self.device)
-        self.target_net = self.target_net.to(self.device)
-        
-        # After moving to device, load state dict from policy to target
+        self.policy_net = DQN(input_shape).to(self.device)
+        self.target_net = DQN(input_shape).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
-        
-        # Create optimizer AFTER moving model to device
-        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=0.0001)
-        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=100000, gamma=0.5)
+        self.optimizer = optim.RMSprop(self.policy_net.parameters(), lr=0.00025)  # Update this line
         self.memory = ReplayBuffer(device=self.device)
 
-    def optimize_model(self, batch_size, gamma=0.99, step_count=None):
+    def optimize_model(self, batch_size, gamma=0.99):  # Remove step_count parameter
         if len(self.memory) < batch_size:
             return 0.0
-            
         state, action, reward, next_state, done = self.memory.sample(batch_size)
-        
-       
-        # Reshape action tensor
         action = action.unsqueeze(1)
-        
-        # Reward clipping
         reward = torch.clamp(reward, -1, 1)
         
-        # Compute Q(s_t, a) for the actions which were taken
         state_action_values = self.policy_net(state).gather(1, action)
+        with torch.no_grad():
+            next_state_values = self.target_net(next_state).max(1)[0]
+            expected_state_action_values = reward + (gamma * next_state_values * (1 - done))
         
-        # Compute V(s_{t+1}) for all next states
-        next_state_values = self.target_net(next_state).max(1)[0].detach()
-        
-        # Compute the expected Q values
-        expected_state_action_values = reward + (gamma * next_state_values * (1 - done))
-        # expected_state_action_values = torch.clamp(expected_state_action_values, -1, 1)
-        
-        # Compute Huber loss
         loss = F.smooth_l1_loss(state_action_values, expected_state_action_values.unsqueeze(1))
         
-        # Optimize the model
         self.optimizer.zero_grad()
         loss.backward()
         for param in self.policy_net.parameters():
             param.grad.data.clamp_(-1, 1)
         self.optimizer.step()
         
-        # Step the scheduler if step_count is provided
-        if step_count is not None and step_count % 1000 == 0:
-            self.scheduler.step()
-        
         return loss.item()
+from collections import deque
+import torch
 
 class FrameStacker:
+    
     def __init__(self, num_frames=4, device=None):
+       
         self.num_frames = num_frames
-        self.frames = []
-        self.device = device if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device if device is not None else torch.device("cpu")
+        self.frames = deque(maxlen=num_frames)
+    
+    def reset(self, initial_frame):
         
+        self.frames = deque([initial_frame] * self.num_frames, maxlen=self.num_frames)
+    
     def push(self, frame):
-        # Ensure frame is on the correct device
-        if isinstance(frame, torch.Tensor) and frame.device != self.device:
-            frame = frame.to(self.device)
-            
-        if len(self.frames) >= self.num_frames:
-            self.frames.pop(0)
-        self.frames.append(frame)
         
+        self.frames.append(frame)
+    
     def get_state(self):
-        # Duplicate the last frame to make it 4 frames
-        while len(self.frames) < self.num_frames:
-            self.frames.append(self.frames[-1])
-
-        # Stack frames using torch
-        return torch.stack(self.frames, dim=0)
+        
+        return torch.stack(list(self.frames), dim=0)
 
 def evaluate(agent, num_episodes=10, render=False):
     """
@@ -215,7 +186,7 @@ def evaluate(agent, num_episodes=10, render=False):
     for episode in range(num_episodes):
         obs, _ = env.reset()
         frame = PreProcessing.preprecess(obs, device=agent.device)
-        frame_stacker.push(frame)
+        frame_stacker.reset(frame)  # This duplicates the frame 4 times
         
         episode_reward = 0
         episode_q_values = []
