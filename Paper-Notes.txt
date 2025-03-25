@@ -177,4 +177,8 @@ Functionn Approxmators( Q(s,a,theta) ~ Q*(s,a))
                     1. Feed these fixed states into the Q-network.  
                     2. Compute the maximum predicted Q-value for each state.  
                     3. Average these Q-values across all stored states.  
-        
+    
+
+Problem faced
+
+1. Q value overestimation
