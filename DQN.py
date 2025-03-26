@@ -154,11 +154,11 @@ class FireResetEnv(gym.Wrapper):
         
     def reset(self):
         self.env.reset()
-        obs, _, done, _ = self.env.step(1)
-        if done: self.env.reset()
-        obs, _, done, _ = self.env.step(2)
-        if done: self.env.reset()
+        obs, _, done, _, _ = self.env.step(1)  # Send FIRE action (action=1)
+        if done:
+            self.env.reset()
         return obs
+    
 
 class MaxAndSkipEnv(gym.Wrapper):
     def __init__(self, env, skip=4):

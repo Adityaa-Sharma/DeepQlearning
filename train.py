@@ -17,6 +17,7 @@ def create_env():
     )
     
     # Apply standard Atari preprocessing
+    env=FireResetEnv(env)
     env = gym.wrappers.AtariPreprocessing(
         env,
         frame_skip=4,        # Combine 4 frames
