@@ -130,6 +130,7 @@ class DQNAgent:
         for param in self.policy_net.parameters():
             param.grad.data.clamp_(-1, 1)
         self.optimizer.step()
+        return loss.item()
         
     def update_target(self):
         self.target_net.load_state_dict(self.policy_net.state_dict())

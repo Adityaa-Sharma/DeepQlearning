@@ -7,6 +7,9 @@ import ale_py
 
 gym.register_envs(ale_py)
 
+
+logger = MetricLogger()
+
 def create_env():
     # Register the environment with proper specification
     env = gym.make(
@@ -41,13 +44,14 @@ def train():
     epsilon_decay = 1e6
     total_steps = 0
     update_target = 10000
+    min_replay_size = 50000
     
     # Initial buffer filling
     print("Filling replay buffer...")
     state, _ = env.reset()
     state = torch.tensor(state.__array__(), device=device).float() / 255.0
     
-    while len(agent.memory) < agent.batch_size:
+    while len(agent.memory) < min_replay_size:
         action = env.action_space.sample()
         obs, reward, terminated, truncated, _ = env.step(action)
         next_state = torch.tensor(obs.__array__(), device=device).float() / 255.0
@@ -98,7 +102,8 @@ def train():
             )
             
             # Optimize
-            agent.optimize()
+            loss=agent.optimize()
+            
             
             # Update target network
             if total_steps % update_target == 0:
@@ -108,7 +113,8 @@ def train():
             total_reward += reward
             
         # Logging
-        print(f"Episode {episode}, Reward: {total_reward}, Epsilon: {epsilon:.3f}")
+        logger.log_episode(total_reward, epsilon)
+        print(f"Episode {episode}, Reward: {total_reward}, Eps: {epsilon:.3f}, Avg Reward (100): {logger.metrics['last_100_mean_reward']:.2f}")
         episode += 1
 
 if __name__ == "__main__":
