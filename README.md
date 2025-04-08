@@ -33,23 +33,30 @@ The codebase currently includes:
 6. **Configuration System**:
    - Configurable parameters in a central location
 
-## Planned Implementations
-
-1. **Training Loop**:
+7. **Training Loop**:
    - Complete training procedure with proper logging
    - Learning rate scheduling
    - Epsilon decay strategy
 
-2. **Model Saving/Loading**:
+8. **Model Saving/Loading**:
    - Checkpointing system for models
    - Resume training capability
 
-3. **Evaluation Framework**:
+9. **Evaluation Framework**:
    - Proper testing procedure
    - Performance metrics tracking
    - Video recording of agent gameplay
 
-4. **Extensions**:
+10. **Visualization**:
+    - Training curves and statistics
+    - Q-value and reward tracking across episodes
+    
+    ![Evaluation Metrics](Evaluation/evaluation_metrics.png)
+    *Projected Q Values and Evaluation Rewards across Episodes*
+
+## Planned Implementations
+
+1. **Extensions**:
    - Double DQN implementation
    - Prioritized Experience Replay
    - Dueling DQN architecture
@@ -57,20 +64,19 @@ The codebase currently includes:
    - Distributional RL (C51)
    - Rainbow DQN (combination of improvements)
 
-5. **Visualization**:
-   - Training curves and statistics
-   - Attention maps of network focus
-   - Q-value visualization
-
-6. **Multi-environment Support**:
+2. **Multi-environment Support**:
    - Extending beyond Breakout to other Atari games
    - Environment wrappers for different games
 
-
-
 ## Usage
 
-Instructions for training and testing the agent will be added once the training loop is implemented.
+### Training the Agent
+
+```bash
+python train.py
+```
+
+
 
 ## Requirements
 
