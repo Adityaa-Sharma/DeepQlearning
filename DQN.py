@@ -141,24 +141,25 @@ class NoopResetEnv(gym.Wrapper):
         super().__init__(env)
         self.noop_max = noop_max
         
-    def reset(self):
-        self.env.reset()
+    def reset(self, seed=None, options=None):
+        obs, info = self.env.reset(seed=seed, options=options)
         noops = random.randint(1, self.noop_max)
         for _ in range(noops):
-            obs, _, done, _ = self.env.step(0)
-            if done: self.env.reset()
-        return obs
+            obs, reward, terminated, truncated, info = self.env.step(0)
+            if terminated or truncated:
+                obs, info = self.env.reset(seed=seed, options=options)
+        return obs, info
 
 class FireResetEnv(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
         
-    def reset(self):
-        self.env.reset()
-        obs, _, done, _, _ = self.env.step(1)  # Send FIRE action (action=1)
-        if done:
-            self.env.reset()
-        return obs
+    def reset(self, seed=None, options=None):
+        obs, info = self.env.reset(seed=seed, options=options)
+        obs, reward, terminated, truncated, info = self.env.step(1)  # Send FIRE action (action=1)
+        if terminated or truncated:
+            obs, info = self.env.reset(seed=seed, options=options)
+        return obs, info
     
 
 class MaxAndSkipEnv(gym.Wrapper):
@@ -168,11 +169,14 @@ class MaxAndSkipEnv(gym.Wrapper):
         
     def step(self, action):
         total_reward = 0.0
-        for _ in range(self.skip):
-            obs, reward, done, info = self.env.step(action)
+        done = False
+        for i in range(self.skip):
+            obs, reward, terminated, truncated, info = self.env.step(action)
             total_reward += reward
-            if done: break
-        return obs, total_reward, done, info
+            if terminated or truncated:
+                break
+        return obs, total_reward, terminated, truncated, info
+
 class MetricLogger:
     """
     Logger to track training metrics
