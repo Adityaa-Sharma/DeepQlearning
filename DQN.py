@@ -15,19 +15,9 @@
 #dqn
 # DQN.py
 # DQN.py
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
-# import torchvision.transforms as T
-from collections import deque
-import random
-import gymnasium as gym
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 # DQN.py
 import torch
+import gymnasium as gym
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
@@ -37,7 +27,7 @@ import random
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class ReplayBuffer:
-    def __init__(self, capacity=int(1e5)):
+    def __init__(self, capacity=int(1e6)):
         self.buffer = deque(maxlen=capacity)
         
     def push(self, state, action, reward, next_state, done):
@@ -52,10 +42,9 @@ class ReplayBuffer:
     def sample(self, batch_size):
         transitions = random.sample(self.buffer, batch_size)
         states, actions, rewards, next_states, dones = zip(*transitions)
-        
         return (
             torch.stack(states).to(device),
-            torch.stack(actions).unsqueeze(1).to(device),  # Add dimension for gathering
+            torch.stack(actions).unsqueeze(1).to(device),
             torch.stack(rewards).to(device),
             torch.stack(next_states).to(device),
             torch.stack(dones).to(device)
@@ -69,23 +58,32 @@ class DQN(nn.Module):
         super(DQN, self).__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(input_shape[0], 32, 8, stride=4),
+            nn.BatchNorm2d(32),  # Added
             nn.ReLU(),
             nn.Conv2d(32, 64, 4, stride=2),
+            nn.BatchNorm2d(64),  # Added
             nn.ReLU(),
             nn.Conv2d(64, 64, 3, stride=1),
+            nn.BatchNorm2d(64),  # Added
             nn.ReLU()
         )
+        for layer in self.conv:
+            if isinstance(layer, nn.Conv2d):
+                nn.init.kaiming_normal_(layer.weight, nonlinearity='relu')
+        
         self.fc = nn.Sequential(
             nn.Linear(self._conv_out_size(input_shape), 512),
             nn.ReLU(),
             nn.Linear(512, num_actions)
         )
+        nn.init.kaiming_normal_(self.fc[0].weight, nonlinearity='relu')
+        nn.init.xavier_uniform_(self.fc[2].weight)
         
     def _conv_out_size(self, shape):
         return self.conv(torch.zeros(1, *shape)).view(1, -1).size(1)
         
     def forward(self, x):
-        x = x.float().div_(255)
+        x = x.float()  # Removed redundant /255
         return self.fc(self.conv(x).view(x.size(0), -1))
 
 class DQNAgent:
@@ -94,7 +92,7 @@ class DQNAgent:
         self.target_net = DQN(input_shape, num_actions).to(device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.optimizer = optim.RMSprop(self.policy_net.parameters(), 
-                                     lr=0.00025, alpha=0.95, eps=0.01)
+                                     lr=0.00025, alpha=0.95, eps=1e-6)
         self.memory = ReplayBuffer()
         self.batch_size = 32
         self.gamma = 0.99
@@ -112,28 +110,26 @@ class DQNAgent:
         
         states, actions, rewards, next_states, dones = self.memory.sample(self.batch_size)
         
-        # Current Q values
-        current_q = self.policy_net(states).gather(1, actions)  # Shape: [batch_size, 1]
+        current_q = self.policy_net(states).gather(1, actions)
         
-        # Target Q values
         with torch.no_grad():
-            next_q = self.target_net(next_states).max(1)[0]  # Shape: [batch_size]
+            next_actions = self.policy_net(next_states).max(1)[1]  # Double DQN
+            next_q = self.target_net(next_states).gather(1, next_actions.unsqueeze(1)).squeeze()
             target_q = rewards + (1 - dones) * self.gamma * next_q
-            target_q = target_q.unsqueeze(1)  # Shape: [batch_size, 1]
+            target_q = target_q.unsqueeze(1)
         
-        # Compute loss
-        loss = F.mse_loss(current_q, target_q)
+        loss = F.smooth_l1_loss(current_q, target_q)
         
-        # Optimize
         self.optimizer.zero_grad()
         loss.backward()
-        for param in self.policy_net.parameters():
-            param.grad.data.clamp_(-1, 1)
+        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=1.0)  # Tighter clipping
         self.optimizer.step()
         return loss.item()
         
     def update_target(self):
         self.target_net.load_state_dict(self.policy_net.state_dict())
+
+
     
 # Environment Wrappers
 class NoopResetEnv(gym.Wrapper):
