@@ -34,23 +34,26 @@ class ReplayBuffer:
         self.buffer = deque(maxlen=capacity)
         
     def push(self, state, action, reward, next_state, done):
+        # state and next_state are CPU tensors. Pin them for faster GPU transfer.
         self.buffer.append((
-            state.cpu().clone(),
-            torch.tensor(action, dtype=torch.long),
-            torch.tensor(reward, dtype=torch.float32),
-            next_state.cpu().clone(),
-            torch.tensor(done, dtype=torch.float32)
+            state.clone().pin_memory(),
+            torch.tensor(action, dtype=torch.long).pin_memory(),
+            torch.tensor(reward, dtype=torch.float32).pin_memory(),
+            next_state.clone().pin_memory(),
+            torch.tensor(done, dtype=torch.float32).pin_memory()
         ))
         
     def sample(self, batch_size):
         transitions = random.sample(self.buffer, batch_size)
         states, actions, rewards, next_states, dones = zip(*transitions)
+        
+        # The individual tensors are already pinned. Stacking them produces a pinned batch.
         return (
-            torch.stack(states).to(device),
-            torch.stack(actions).unsqueeze(1).to(device),
-            torch.stack(rewards).to(device),
-            torch.stack(next_states).to(device),
-            torch.stack(dones).to(device)
+            torch.stack(states),
+            torch.stack(actions).unsqueeze(1),
+            torch.stack(rewards),
+            torch.stack(next_states),
+            torch.stack(dones)
         )
 
     def __len__(self):
@@ -112,6 +115,13 @@ class DQNAgent:
             return
         
         states, actions, rewards, next_states, dones = self.memory.sample(self.batch_size)
+        
+        # Asynchronously move data to GPU since it's from pinned memory
+        states = states.to(device, non_blocking=True)
+        actions = actions.to(device, non_blocking=True)
+        rewards = rewards.to(device, non_blocking=True)
+        next_states = next_states.to(device, non_blocking=True)
+        dones = dones.to(device, non_blocking=True)
         
         current_q = self.policy_net(states).gather(1, actions)
         
