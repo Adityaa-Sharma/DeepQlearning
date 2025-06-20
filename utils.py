@@ -85,7 +85,7 @@ def plot_evaluation_metrics(eval_history, save_dir='plots'):
     os.makedirs(save_dir, exist_ok=True)
     
     # Extract metrics
-    episodes = [entry['episode'] for entry in eval_history]
+    steps = [entry['steps'] for entry in eval_history]
     rewards = [entry['mean_reward'] for entry in eval_history]
     reward_stds = [entry['std_reward'] for entry in eval_history]
     q_values = [entry['mean_q_value'] for entry in eval_history]
@@ -95,16 +95,16 @@ def plot_evaluation_metrics(eval_history, save_dir='plots'):
     fig, axs = plt.subplots(2, 1, figsize=(10, 10), sharex=True)
     
     # Plot rewards with error bars
-    axs[0].errorbar(episodes, rewards, yerr=reward_stds, fmt='o-', capsize=5, label='Mean Reward')
+    axs[0].errorbar(steps, rewards, yerr=reward_stds, fmt='o-', capsize=5, label='Mean Reward')
     axs[0].set_ylabel('Reward')
-    axs[0].set_title('Evaluation Rewards')
+    axs[0].set_title('Evaluation Rewards vs. Training Steps')
     axs[0].grid(True, alpha=0.3)
     
     # Plot Q-values with error bars
-    axs[1].errorbar(episodes, q_values, yerr=q_value_stds, fmt='o-', capsize=5, label='Mean Q-Value')
+    axs[1].errorbar(steps, q_values, yerr=q_value_stds, fmt='o-', capsize=5, label='Mean Q-Value')
     axs[1].set_ylabel('Q-Value')
-    axs[1].set_xlabel('Episode')
-    axs[1].set_title('Evaluation Q-Values')
+    axs[1].set_xlabel('Training Steps')
+    axs[1].set_title('Evaluation Q-Values vs. Training Steps')
     axs[1].grid(True, alpha=0.3)
     
     plt.tight_layout()

@@ -16,13 +16,16 @@
 # DQN.py
 # DQN.py
 # DQN.py
+import random
+from collections import deque
 import torch
-import gymnasium as gym
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-from collections import deque
-import random
+import gymnasium as gym
+from configs import ModelConfig
+
+
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -94,7 +97,7 @@ class DQNAgent:
         self.optimizer = optim.RMSprop(self.policy_net.parameters(), 
                                      lr=0.00025, alpha=0.95, eps=1e-6)
         self.memory = ReplayBuffer()
-        self.batch_size = 32
+        self.batch_size = ModelConfig.batch_size
         self.gamma = 0.99
         
     def act(self, state, epsilon):
@@ -113,8 +116,7 @@ class DQNAgent:
         current_q = self.policy_net(states).gather(1, actions)
         
         with torch.no_grad():
-            next_actions = self.policy_net(next_states).max(1)[1]  # Double DQN
-            next_q = self.target_net(next_states).gather(1, next_actions.unsqueeze(1)).squeeze()
+            next_q = self.target_net(next_states).max(1)[0]
             target_q = rewards + (1 - dones) * self.gamma * next_q
             target_q = target_q.unsqueeze(1)
         
@@ -130,21 +132,6 @@ class DQNAgent:
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
 
-    
-# Environment Wrappers
-class NoopResetEnv(gym.Wrapper):
-    def __init__(self, env, noop_max=30):
-        super().__init__(env)
-        self.noop_max = noop_max
-        
-    def reset(self, seed=None, options=None):
-        obs, info = self.env.reset(seed=seed, options=options)
-        noops = random.randint(1, self.noop_max)
-        for _ in range(noops):
-            obs, reward, terminated, truncated, info = self.env.step(0)
-            if terminated or truncated:
-                obs, info = self.env.reset(seed=seed, options=options)
-        return obs, info
 
 class FireResetEnv(gym.Wrapper):
     def __init__(self, env):
@@ -158,20 +145,6 @@ class FireResetEnv(gym.Wrapper):
         return obs, info
     
 
-class MaxAndSkipEnv(gym.Wrapper):
-    def __init__(self, env, skip=4):
-        super().__init__(env)
-        self.skip = skip
-        
-    def step(self, action):
-        total_reward = 0.0
-        done = False
-        for i in range(self.skip):
-            obs, reward, terminated, truncated, info = self.env.step(action)
-            total_reward += reward
-            if terminated or truncated:
-                break
-        return obs, total_reward, terminated, truncated, info
 
 class MetricLogger:
     """

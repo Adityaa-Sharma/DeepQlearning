@@ -1,0 +1,12 @@
+2025-06-21 04:06:56,605 - INFO - Creating fixed states for Q-value evaluation...
+2025-06-21 04:07:04,274 - INFO - Collected 10000 states for evaluation.
+2025-06-21 04:07:04,274 - INFO - Filling replay buffer...
+2025-06-21 04:09:35,648 - INFO - Starting training...
+2025-06-21 04:09:51,278 - INFO - Episode 0, Reward: 0.0, Eps: 1.000, Avg Q: 1.35, Loss: 0.2798, Steps: 129, Frames: 516, Avg Reward (100): 0.00
+2025-06-21 04:10:05,583 - INFO - Episode 1, Reward: 0.0, Eps: 0.999, Avg Q: 1.00, Loss: 0.0794, Steps: 267, Frames: 1068, Avg Reward (100): 0.00
+2025-06-21 04:10:20,087 - INFO - Episode 2, Reward: 1.0, Eps: 0.998, Avg Q: 0.95, Loss: 0.0565, Steps: 423, Frames: 1692, Avg Reward (100): 0.33
+2025-06-21 04:10:29,333 - INFO - Episode 3, Reward: 1.0, Eps: 0.998, Avg Q: 0.83, Loss: 0.0426, Steps: 589, Frames: 2356, Avg Reward (100): 0.50
+2025-06-21 04:10:38,940 - INFO - Episode 4, Reward: 1.0, Eps: 0.997, Avg Q: 0.86, Loss: 0.0291, Steps: 764, Frames: 3056, Avg Reward (100): 0.60
+2025-06-21 04:10:45,206 - INFO - Episode 5, Reward: 0.0, Eps: 0.997, Avg Q: 0.81, Loss: 0.0257, Steps: 898, Frames: 3592, Avg Reward (100): 0.50
+2025-06-21 04:10:50,643 - INFO - Episode 6, Reward: 0.0, Eps: 0.996, Avg Q: 0.78, Loss: 0.0205, Steps: 1023, Frames: 4092, Avg Reward (100): 0.43
+2025-06-21 04:11:01,943 - INFO - Episode 7, Reward: 2.0, Eps: 0.996, Avg Q: 0.73, Loss: 0.0187, Steps: 1250, Frames: 5000, Avg Reward (100): 0.62
