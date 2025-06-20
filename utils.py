@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import torch
+import imageio
 
 def plot_training_metrics(logger, save_dir='plots'):
     """
@@ -110,3 +111,38 @@ def plot_evaluation_metrics(eval_history, save_dir='plots'):
     plt.tight_layout()
     plt.savefig(f"{save_dir}/evaluation_metrics.png", dpi=300)
     plt.close()
+
+def save_agent_gif(agent, env, filepath='agent_play.gif'):
+    """
+    Records an episode of the agent playing and saves it as a GIF.
+
+    Args:
+        agent: The DQNAgent to evaluate.
+        env: The Gymnasium environment.
+        filepath: The path to save the GIF file.
+    """
+    frames = []
+    agent.policy_net.eval()  # Set the network to evaluation mode
+    
+    device = next(agent.policy_net.parameters()).device
+
+    state, _ = env.reset()
+    frames.append(env.render())
+    
+    done = False
+    while not done:
+        state_tensor = torch.tensor(state.__array__(), device=device).float() / 255.0
+        
+        # Always act greedily (epsilon=0) for recording
+        with torch.no_grad():
+            action = agent.policy_net(state_tensor.unsqueeze(0)).max(1)[1].view(1, 1)
+        
+        state, reward, terminated, truncated, _ = env.step(action.item())
+        frames.append(env.render())
+        done = terminated or truncated
+
+    agent.policy_net.train()  # Set back to training mode
+
+    # Save the collected frames as a GIF
+    imageio.mimsave(filepath, frames, fps=30)
+    print(f"Saved agent gameplay GIF to {filepath}")

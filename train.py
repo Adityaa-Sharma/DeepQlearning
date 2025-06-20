@@ -4,7 +4,7 @@ from DQN import *
 import torch
 import numpy as np
 import ale_py
-from utils import plot_training_metrics, plot_evaluation_metrics
+from utils import plot_training_metrics, plot_evaluation_metrics, save_agent_gif
 import os
 import logging
 from configs import ModelConfig
@@ -26,6 +26,7 @@ gym.register_envs(ale_py)
 
 os.makedirs('checkpoints', exist_ok=True)
 os.makedirs('plots', exist_ok=True)
+os.makedirs('videos', exist_ok=True)
 
 metrics_logger = MetricLogger()
 
@@ -201,7 +202,7 @@ def train():
                 })
                 
                 # Update the plot for evaluation metrics
-                plot_evaluation_metrics(eval_history, save_dir='plots')
+                plot_evaluation_metrics(eval_history, save_dir='/plots/evaluation')
 
                 next_eval_step += eval_freq
 
@@ -217,19 +218,13 @@ def train():
               f"Avg Q: {avg_q_value:.2f}, Loss: {avg_loss:.4f}, Steps: {total_steps}, "
               f"Frames: {total_steps * 4}, Avg Reward (100): {metrics['last_100_mean_reward']:.2f}")
         
-        if episode % 10 == 0 and episode > 0:
-            # checkpoint_path = f"checkpoints/dqn_episode_{episode}.pt"
-            # torch.save({
-            #     'episode': episode,
-            #     'policy_net_state_dict': agent.policy_net.state_dict(),
-            #     'target_net_state_dict': agent.target_net.state_dict(),
-            #     'optimizer_state_dict': agent.optimizer.state_dict(),
-            #     'epsilon': epsilon,
-            #     'total_steps': total_steps,
-            # }, checkpoint_path)
-            # metrics_logger.save_data(folder='tensors')
-            plot_training_metrics(metrics_logger, save_dir='plots')
-            # plot_evaluation_metrics(metrics_logger, save_dir='plots/evaluation')
+        if episode > 0 and episode % 10 == 0:
+            plot_training_metrics(metrics_logger, save_dir='plots/training')
+        
+        # Save a GIF of the agent playing
+        if episode > 0 and episode % ModelConfig.video_save_freq == 0:
+            video_path = f"videos/agent_episode_{episode}.gif"
+            save_agent_gif(agent, eval_env, video_path)
         
         episode += 1
 
