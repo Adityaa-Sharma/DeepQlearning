@@ -34,15 +34,22 @@ def evaluate_agent(agent, env, eval_episodes=ModelConfig.eval_episodes, fixed_st
     """
     Runs a comprehensive evaluation of the agent's performance.
     """
+    logger.info("Starting evaluation...")
     agent.policy_net.eval()  # Set the network to evaluation mode
     total_rewards = []
     
-    for _ in range(eval_episodes):
+    for i in range(eval_episodes):
+        if i % 10 == 0:
+            logger.info(f"Evaluation episode {i}/{eval_episodes}")
+        
         state, _ = env.reset()
         state = torch.tensor(state.__array__(), device=device).float() / 255.0
         done = False
         episode_reward = 0
-        while not done:
+        step_count = 0
+        max_steps = 10000  # Prevent infinite episodes
+        
+        while not done and step_count < max_steps:
             # Always act greedily (epsilon=0) in evaluation
             with torch.no_grad():
                 action = agent.policy_net(state.unsqueeze(0)).max(1)[1].view(1, 1)
@@ -52,19 +59,32 @@ def evaluate_agent(agent, env, eval_episodes=ModelConfig.eval_episodes, fixed_st
             done = terminated or truncated
             state = next_state
             episode_reward += reward
+            step_count += 1
+            
         total_rewards.append(episode_reward)
 
     mean_reward = np.mean(total_rewards)
     std_reward = np.std(total_rewards)
     
-    # Calculate average max Q on the fixed set of states
+    # Calculate average max Q on the fixed set of states (in batches to avoid memory issues)
     avg_max_q = 0
     if fixed_states is not None:
+        logger.info("Computing Q-values on fixed states...")
+        batch_size = 500  # Process in smaller batches
+        q_values_list = []
+        
         with torch.no_grad():
-            q_values = agent.policy_net(fixed_states)
-            avg_max_q = q_values.max(1)[0].mean().item()
+            for i in range(0, len(fixed_states), batch_size):
+                batch = fixed_states[i:i+batch_size]
+                q_batch = agent.policy_net(batch)
+                max_q_batch = q_batch.max(1)[0]
+                q_values_list.append(max_q_batch)
+        
+        all_q_values = torch.cat(q_values_list)
+        avg_max_q = all_q_values.mean().item()
 
     agent.policy_net.train()  # Set back to training mode
+    logger.info("Evaluation completed.")
     return mean_reward, std_reward, avg_max_q
 
 def create_env():
@@ -105,7 +125,9 @@ def train():
     logger.info("Creating fixed states for Q-value evaluation...")
     fixed_states_buffer = []
     state, _ = eval_env.reset()
-    for _ in range(10000):  # Collect 10k states
+    for i in range(5000):  # Reduced to 5k states to avoid memory issues
+        if i % 1000 == 0:
+            logger.info(f"Collected {i}/5000 states...")
         action = eval_env.action_space.sample()
         obs, _, terminated, truncated, _ = eval_env.step(action)
         state_tensor = torch.tensor(obs.__array__(), device=device).float() / 255.0
@@ -113,7 +135,11 @@ def train():
         if terminated or truncated:
             obs, _ = eval_env.reset()
             state_tensor = torch.tensor(obs.__array__(), device=device).float() / 255.0
+    
+    # Convert to tensor in smaller batches to avoid memory spike
+    logger.info("Converting states to tensor...")
     fixed_states = torch.stack(fixed_states_buffer).to(device)
+    del fixed_states_buffer  # Free memory
     logger.info(f"Collected {len(fixed_states)} states for evaluation.")
 
     # Initialize replay buffer
@@ -185,26 +211,36 @@ def train():
             
             # --- Periodic Evaluation ---
             if total_steps >= next_eval_step:
-                mean_reward, std_reward, avg_max_q = evaluate_agent(
-                    agent, eval_env, eval_episodes=ModelConfig.eval_episodes, fixed_states=fixed_states
-                )
-                logger.info(f"\n--- Evaluation at {total_steps} steps ---")
-                logger.info(f"    Avg Reward: {mean_reward:.2f} +/- {std_reward:.2f}")
-                logger.info(f"    Avg Max Q: {avg_max_q:.2f}")
-                logger.info(f"------------------------------------")
-                
-                eval_history.append({
-                    'steps': total_steps,
-                    'mean_reward': mean_reward,
-                    'std_reward': std_reward,
-                    'mean_q_value': avg_max_q,
-                    'std_q_value': 0 # Placeholder, can be calculated if needed
-                })
-                
-                # Update the plot for evaluation metrics
-                plot_evaluation_metrics(eval_history, save_dir='plots/evaluation')
+                try:
+                    logger.info(f"Starting evaluation at step {total_steps}")
+                    mean_reward, std_reward, avg_max_q = evaluate_agent(
+                        agent, eval_env, eval_episodes=ModelConfig.eval_episodes, fixed_states=fixed_states
+                    )
+                    logger.info(f"\n--- Evaluation at {total_steps} steps ---")
+                    logger.info(f"    Avg Reward: {mean_reward:.2f} +/- {std_reward:.2f}")
+                    logger.info(f"    Avg Max Q: {avg_max_q:.2f}")
+                    logger.info(f"------------------------------------")
+                    
+                    eval_history.append({
+                        'steps': total_steps,
+                        'mean_reward': mean_reward,
+                        'std_reward': std_reward,
+                        'mean_q_value': avg_max_q,
+                        'std_q_value': 0 # Placeholder, can be calculated if needed
+                    })
+                    
+                    # Update the plot for evaluation metrics
+                    try:
+                        plot_evaluation_metrics(eval_history, save_dir='plots/evaluation')
+                    except Exception as e:
+                        logger.warning(f"Failed to plot evaluation metrics: {e}")
 
-                next_eval_step += eval_freq
+                    next_eval_step += eval_freq
+                    
+                except Exception as e:
+                    logger.error(f"Evaluation failed at step {total_steps}: {e}")
+                    # Skip this evaluation and try again next time
+                    next_eval_step += eval_freq
 
             state = next_state
             total_reward += reward

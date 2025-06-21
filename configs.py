@@ -15,7 +15,7 @@ class ModelConfig:
     total_steps: int = 0
     update_target: int = 10000
     eval_freq: int = 50000 # Evaluate every 50,000 agent steps
-    eval_episodes: int = 40  # Number of episodes for evaluation: 30
+    eval_episodes: int = 10  # Number of episodes for evaluation: reduced for faster evaluation
     video_save_freq: int = 400 # Save a GIF every 100 episodes
 
 
