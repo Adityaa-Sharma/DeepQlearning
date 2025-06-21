@@ -99,7 +99,7 @@ def train():
     update_target = ModelConfig.update_target
     min_replay_size = ModelConfig.ReplayBufferCapacity // 10  # Start training after 10% of buffer is filled
     eval_freq = ModelConfig.eval_freq  # Evaluate every 50,000 steps
-    next_eval_step = eval_freq
+    next_eval_step = eval_freq  # First evaluation at 50,000 steps
     
     # Create a fixed set of states for Q-value evaluation (as per the paper)
     logger.info("Creating fixed states for Q-value evaluation...")
@@ -184,9 +184,9 @@ def train():
                 agent.update_target()
             
             # --- Periodic Evaluation ---
-            if total_steps ==0 or (total_steps % eval_freq == 0):
+            if total_steps >= next_eval_step:
                 mean_reward, std_reward, avg_max_q = evaluate_agent(
-                    agent, eval_env, eval_episodes=30, fixed_states=fixed_states
+                    agent, eval_env, eval_episodes=ModelConfig.eval_episodes, fixed_states=fixed_states
                 )
                 logger.info(f"\n--- Evaluation at {total_steps} steps ---")
                 logger.info(f"    Avg Reward: {mean_reward:.2f} +/- {std_reward:.2f}")
@@ -202,7 +202,7 @@ def train():
                 })
                 
                 # Update the plot for evaluation metrics
-                plot_evaluation_metrics(eval_history, save_dir='/plots/evaluation')
+                plot_evaluation_metrics(eval_history, save_dir='plots/evaluation')
 
                 next_eval_step += eval_freq
 
@@ -218,7 +218,7 @@ def train():
               f"Avg Q: {avg_q_value:.2f}, Loss: {avg_loss:.4f}, Steps: {total_steps}, "
               f"Frames: {total_steps * 4}, Avg Reward (100): {metrics['last_100_mean_reward']:.2f}")
         
-        if episode > 0 and episode % 10 == 0:
+        if episode > 0 and episode % 100 == 0:
             plot_training_metrics(metrics_logger, save_dir='plots/training')
         
         # Save a GIF of the agent playing
