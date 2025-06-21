@@ -34,57 +34,38 @@ def evaluate_agent(agent, env, eval_episodes=ModelConfig.eval_episodes, fixed_st
     """
     Runs a comprehensive evaluation of the agent's performance.
     """
-    logger.info("Starting evaluation...")
     agent.policy_net.eval()  # Set the network to evaluation mode
     total_rewards = []
     
-    for i in range(eval_episodes):
-        if i % 10 == 0:
-            logger.info(f"Evaluation episode {i}/{eval_episodes}")
-        
+    for _ in range(eval_episodes):
         state, _ = env.reset()
-        state = torch.tensor(state.__array__(), device=device).float() / 255.0
+        state = torch.tensor(state.__array__(), dtype=torch.uint8)
         done = False
         episode_reward = 0
-        step_count = 0
-        max_steps = 10000  # Prevent infinite episodes
-        
-        while not done and step_count < max_steps:
+        while not done:
             # Always act greedily (epsilon=0) in evaluation
             with torch.no_grad():
-                action = agent.policy_net(state.unsqueeze(0)).max(1)[1].view(1, 1)
+                action = agent.act(state.unsqueeze(0), 0.0)
             
             obs, reward, terminated, truncated, _ = env.step(action.item())
-            next_state = torch.tensor(obs.__array__(), device=device).float() / 255.0
+            next_state = torch.tensor(obs.__array__(), dtype=torch.uint8)
             done = terminated or truncated
             state = next_state
             episode_reward += reward
-            step_count += 1
-            
         total_rewards.append(episode_reward)
 
     mean_reward = np.mean(total_rewards)
     std_reward = np.std(total_rewards)
     
-    # Calculate average max Q on the fixed set of states (in batches to avoid memory issues)
+    # Calculate average max Q on the fixed set of states
     avg_max_q = 0
     if fixed_states is not None:
-        logger.info("Computing Q-values on fixed states...")
-        batch_size = 500  # Process in smaller batches
-        q_values_list = []
-        
         with torch.no_grad():
-            for i in range(0, len(fixed_states), batch_size):
-                batch = fixed_states[i:i+batch_size]
-                q_batch = agent.policy_net(batch)
-                max_q_batch = q_batch.max(1)[0]
-                q_values_list.append(max_q_batch)
-        
-        all_q_values = torch.cat(q_values_list)
-        avg_max_q = all_q_values.mean().item()
+            fixed_states_float = fixed_states.float() / 255.0
+            q_values = agent.policy_net(fixed_states_float)
+            avg_max_q = q_values.max(1)[0].mean().item()
 
     agent.policy_net.train()  # Set back to training mode
-    logger.info("Evaluation completed.")
     return mean_reward, std_reward, avg_max_q
 
 def create_env():
@@ -100,7 +81,7 @@ def create_env():
         env,
         frame_skip=4,
         screen_size=84,
-        terminal_on_life_loss=False,  
+        terminal_on_life_loss=True,  
         grayscale_obs=True
     )
     env = gym.wrappers.FrameStackObservation(env, 4)
@@ -114,56 +95,42 @@ def train():
     # Hyperparameters
     epsilon_start = ModelConfig.epsilon_start
     epsilon_min = ModelConfig.epsilon_min
-    epsilon_decay = ModelConfig.epsilon_decay  # Faster decay
+    epsilon_decay = ModelConfig.epsilon_decay
     total_steps = 0
     update_target = ModelConfig.update_target
-    min_replay_size = ModelConfig.ReplayBufferCapacity // 10  # Start training after 10% of buffer is filled
-    eval_freq = ModelConfig.eval_freq  # Evaluate every 50,000 steps
-    next_eval_step = eval_freq  # First evaluation at 50,000 steps
+    min_replay_size = ModelConfig.ReplayBufferCapacity // 10
+    eval_freq = ModelConfig.eval_freq
+    next_eval_step = eval_freq
     
     # Create a fixed set of states for Q-value evaluation (as per the paper)
     logger.info("Creating fixed states for Q-value evaluation...")
     fixed_states_buffer = []
-    state, _ = eval_env.reset()
-    for i in range(5000):  # Reduced to 5k states to avoid memory issues
-        if i % 1000 == 0:
-            logger.info(f"Collected {i}/5000 states...")
+    obs, _ = eval_env.reset()
+    for _ in range(10000):  # Collect 10k states
+        state_tensor = torch.tensor(obs.__array__(), dtype=torch.uint8)
+        fixed_states_buffer.append(state_tensor)
         action = eval_env.action_space.sample()
         obs, _, terminated, truncated, _ = eval_env.step(action)
-        state_tensor = torch.tensor(obs.__array__(), device=device).float() / 255.0
-        fixed_states_buffer.append(state_tensor)
         if terminated or truncated:
             obs, _ = eval_env.reset()
-            state_tensor = torch.tensor(obs.__array__(), device=device).float() / 255.0
-    
-    # Convert to tensor in smaller batches to avoid memory spike
-    logger.info("Converting states to tensor...")
     fixed_states = torch.stack(fixed_states_buffer).to(device)
-    del fixed_states_buffer  # Free memory
     logger.info(f"Collected {len(fixed_states)} states for evaluation.")
 
     # Initialize replay buffer
     logger.info("Filling replay buffer...")
     state, _ = env.reset()
-    state = torch.tensor(state.__array__(), device=device).float() / 255.0  # Single normalization
+    state = torch.tensor(state.__array__(), dtype=torch.uint8)
     
     while len(agent.memory) < min_replay_size:
         action = env.action_space.sample()
         obs, reward, terminated, truncated, _ = env.step(action)
-        next_state = torch.tensor(obs.__array__(), device=device).float() / 255.0
+        next_state = torch.tensor(obs.__array__(), dtype=torch.uint8)
         done = terminated or truncated
         
-        # reward clipping {-1,0,1}
         clipped_reward = np.sign(reward) if reward != 0 else 0
-        agent.memory.push(
-            state.cpu(),
-            action,
-            clipped_reward,  
-            next_state.cpu(),
-            done
-        )
-        state = next_state if not done else torch.tensor(env.reset()[0].__array__(), 
-                                             device=device).float() / 255.0
+        agent.memory.push(state, action, clipped_reward, next_state, done)
+        
+        state = next_state if not done else torch.tensor(env.reset()[0].__array__(), dtype=torch.uint8)
     
     # Training loop
     logger.info("Starting training...")
@@ -171,7 +138,7 @@ def train():
     eval_history = []
     while True:
         state, _ = env.reset()
-        state = torch.tensor(state.__array__(), device=device).float() / 255.0
+        state = torch.tensor(state.__array__(), dtype=torch.uint8)
         total_reward = 0
         done = False
         episode_q_values = []
@@ -184,23 +151,17 @@ def train():
             action = agent.act(state.unsqueeze(0), epsilon)
             
             with torch.no_grad():
-                q_value = agent.policy_net(state.unsqueeze(0)).max().item()
+                state_float = state.unsqueeze(0).to(device).float() / 255.0
+                q_value = agent.policy_net(state_float).max().item()
                 episode_q_values.append(q_value)
             
             obs, reward, terminated, truncated, _ = env.step(action.item())
-            next_state = torch.tensor(obs.__array__(), device=device).float() / 255.0
+            next_state = torch.tensor(obs.__array__(), dtype=torch.uint8)
             done = terminated or truncated
             
-            # reward clipping {-1,0,1}
             clipped_reward = np.sign(reward) if reward != 0 else 0
             
-            agent.memory.push(
-                state.cpu(),
-                action.item(),
-                clipped_reward,  
-                next_state.cpu(),
-                done
-            )
+            agent.memory.push(state, action.item(), clipped_reward, next_state, done)
             
             loss = agent.optimize()
             if loss is not None:
@@ -211,36 +172,24 @@ def train():
             
             # --- Periodic Evaluation ---
             if total_steps >= next_eval_step:
-                try:
-                    logger.info(f"Starting evaluation at step {total_steps}")
-                    mean_reward, std_reward, avg_max_q = evaluate_agent(
-                        agent, eval_env, eval_episodes=ModelConfig.eval_episodes, fixed_states=fixed_states
-                    )
-                    logger.info(f"\n--- Evaluation at {total_steps} steps ---")
-                    logger.info(f"    Avg Reward: {mean_reward:.2f} +/- {std_reward:.2f}")
-                    logger.info(f"    Avg Max Q: {avg_max_q:.2f}")
-                    logger.info(f"------------------------------------")
-                    
-                    eval_history.append({
-                        'steps': total_steps,
-                        'mean_reward': mean_reward,
-                        'std_reward': std_reward,
-                        'mean_q_value': avg_max_q,
-                        'std_q_value': 0 # Placeholder, can be calculated if needed
-                    })
-                    
-                    # Update the plot for evaluation metrics
-                    try:
-                        plot_evaluation_metrics(eval_history, save_dir='plots/evaluation')
-                    except Exception as e:
-                        logger.warning(f"Failed to plot evaluation metrics: {e}")
-
-                    next_eval_step += eval_freq
-                    
-                except Exception as e:
-                    logger.error(f"Evaluation failed at step {total_steps}: {e}")
-                    # Skip this evaluation and try again next time
-                    next_eval_step += eval_freq
+                mean_reward, std_reward, avg_max_q = evaluate_agent(
+                    agent, eval_env, eval_episodes=ModelConfig.eval_episodes, fixed_states=fixed_states
+                )
+                logger.info(f"\n--- Evaluation at {total_steps} steps ---")
+                logger.info(f"    Avg Reward: {mean_reward:.2f} +/- {std_reward:.2f}")
+                logger.info(f"    Avg Max Q: {avg_max_q:.2f}")
+                logger.info(f"------------------------------------")
+                
+                eval_history.append({
+                    'steps': total_steps,
+                    'mean_reward': mean_reward,
+                    'std_reward': std_reward,
+                    'mean_q_value': avg_max_q,
+                    'std_q_value': 0
+                })
+                
+                plot_evaluation_metrics(eval_history, save_dir='plots/evaluation')
+                next_eval_step += eval_freq
 
             state = next_state
             total_reward += reward
@@ -257,7 +206,6 @@ def train():
         if episode > 0 and episode % 100 == 0:
             plot_training_metrics(metrics_logger, save_dir='plots/training')
         
-        # Save a GIF of the agent playing
         if episode > 0 and episode % ModelConfig.video_save_freq == 0:
             video_path = f"videos/agent_episode_{episode}.gif"
             save_agent_gif(agent, eval_env, video_path)

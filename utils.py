@@ -131,11 +131,11 @@ def save_agent_gif(agent, env, filepath='agent_play.gif'):
     
     done = False
     while not done:
-        state_tensor = torch.tensor(state.__array__(), device=device).float() / 255.0
+        state_tensor = torch.tensor(state.__array__(), dtype=torch.uint8)
         
         # Always act greedily (epsilon=0) for recording
         with torch.no_grad():
-            action = agent.policy_net(state_tensor.unsqueeze(0)).max(1)[1].view(1, 1)
+            action = agent.act(state_tensor.unsqueeze(0), 0.0)
         
         state, reward, terminated, truncated, _ = env.step(action.item())
         frames.append(env.render())

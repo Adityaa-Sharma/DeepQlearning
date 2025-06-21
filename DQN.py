@@ -34,7 +34,7 @@ class ReplayBuffer:
         self.buffer = deque(maxlen=capacity)
         
     def push(self, state, action, reward, next_state, done):
-        # state and next_state are CPU tensors. Pin them for faster GPU transfer.
+        # state and next_state are CPU tensors of type uint8. Pin them for faster GPU transfer.
         self.buffer.append((
             state.clone().pin_memory(),
             torch.tensor(action, dtype=torch.long).pin_memory(),
@@ -89,7 +89,6 @@ class DQN(nn.Module):
         return self.conv(torch.zeros(1, *shape)).view(1, -1).size(1)
         
     def forward(self, x):
-        x = x.float()  # Removed redundant /255
         return self.fc(self.conv(x).view(x.size(0), -1))
 
 class DQNAgent:
@@ -106,7 +105,9 @@ class DQNAgent:
     def act(self, state, epsilon):
         if random.random() > epsilon:
             with torch.no_grad():
-                return self.policy_net(state).max(1)[1].view(1, 1)
+                # state is expected to be a uint8 tensor on CPU, shape (1, 4, 84, 84)
+                state_float = state.to(device).float() / 255.0
+                return self.policy_net(state_float).max(1)[1].view(1, 1)
         return torch.tensor([[random.randint(0, self.policy_net.fc[-1].out_features-1)]], 
                            device=device, dtype=torch.long)
     
@@ -116,11 +117,11 @@ class DQNAgent:
         
         states, actions, rewards, next_states, dones = self.memory.sample(self.batch_size)
         
-        # Asynchronously move data to GPU since it's from pinned memory
-        states = states.to(device, non_blocking=True)
+        # Asynchronously move data to GPU, convert to float, and normalize
+        states = states.to(device, non_blocking=True).float() / 255.0
         actions = actions.to(device, non_blocking=True)
         rewards = rewards.to(device, non_blocking=True)
-        next_states = next_states.to(device, non_blocking=True)
+        next_states = next_states.to(device, non_blocking=True).float() / 255.0
         dones = dones.to(device, non_blocking=True)
         
         current_q = self.policy_net(states).gather(1, actions)
