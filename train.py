@@ -81,7 +81,7 @@ def create_env():
         env,
         frame_skip=4,
         screen_size=84,
-        terminal_on_life_loss=True,  
+        terminal_on_life_loss=False,  
         grayscale_obs=True
     )
     env = gym.wrappers.FrameStackObservation(env, 4)
