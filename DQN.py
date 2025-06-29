@@ -30,7 +30,7 @@ from configs import ModelConfig
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class ReplayBuffer:
-    def __init__(self, capacity=int(1e6)):
+    def __init__(self, capacity=ModelConfig.ReplayBufferCapacity):
         self.buffer = deque(maxlen=capacity)
         
     def push(self, state, action, reward, next_state, done):
@@ -98,10 +98,10 @@ class DQNAgent:
         self.target_net = DQN(input_shape, num_actions).to(device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.optimizer = optim.RMSprop(self.policy_net.parameters(), 
-                                     lr=0.00025, alpha=0.95, eps=1e-6)
+                                     lr=ModelConfig.lr, alpha=0.95, eps=1e-6)
         self.memory = ReplayBuffer()
         self.batch_size = ModelConfig.batch_size
-        self.gamma = 0.99
+        self.gamma = ModelConfig.gamma
         
     def act(self, state, epsilon):
         if random.random() > epsilon:
