@@ -25,6 +25,10 @@ The following metrics were tracked during training:
 
 The agent was trained for approximately **1600 episodes** on the Breakout environment. Below are the training results and performance visualizations:
 
+### Agent Performance
+![DQN Agent Gameplay](video/DQN_Agent.gif)
+*Trained DQN agent playing Breakout after 1600 episodes of training*
+
 ### Training Metrics
 ![Training Metrics](plots/training/training_metrics.png)
 
@@ -34,9 +38,7 @@ The agent was trained for approximately **1600 episodes** on the Breakout enviro
 ![Evaluation Metrics](plots/evaluation/evaluation_metrics.png)
 *Evaluation results showing Q-values and reward progression during testing*
 
-### Agent Performance
-![DQN Agent Gameplay](videos/DQN_Agent.gif)
-*Trained DQN agent playing Breakout after 1600 episodes of training*
+
 
 ## Implementation
 
